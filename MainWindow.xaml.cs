@@ -1,195 +1,234 @@
-﻿    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Threading.Tasks;
-    using System.Windows;
-    using System.Windows.Controls;
-    using System.Windows.Media.Imaging; // Do obsługi obrazków
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives; // Potrzebne dla UniformGrid
+using System.Windows.Media.Imaging;
 
-    namespace MemoryGameWPF
+namespace MemoryGameWPF
+{
+    public partial class MainWindow : Window
     {
-        public partial class MainWindow : Window
+        // Zmienne gry
+        private Button firstCard = null;
+        private Button secondCard = null;
+        private bool isChecking = false;
+        private int moves = 0;
+
+        // --- NOWE: Aktualny rozmiar siatki (domyślnie 4x4) ---
+        private int currentGridSize = 4;
+
+        // --- NOWE: Rozszerzona lista nazw plików ---
+        // UWAGA: Aby gra 8x8 działała, musisz mieć pliki od karta1.png do karta32.png!
+        // Tutaj generuję listę automatycznie dla wygody, zakładając nazwy "karta1"..."karta32"
+        private List<string> nazwyPlikow = new List<string>();
+
+        // Zmienne do przechowywania załadowanych grafik
+        private BitmapImage obrazTylu;
+        private Dictionary<string, BitmapImage> obrazyPrzodow = new Dictionary<string, BitmapImage>();
+
+        public MainWindow()
         {
-            // Zmienne gry
-            private Button firstCard = null;
-            private Button secondCard = null;
-            private bool isChecking = false;
-            private int moves = 0;
+            InitializeComponent();
 
-            // Lista nazw plików (bez rozszerzenia .png)
-            private List<string> nazwyPlikow = new List<string>()
+            // Generujemy nazwy plików od karta1 do karta32
+            for (int i = 1; i <= 32; i++)
             {
-                "karta1", "karta2", "karta3", "karta4",
-                "karta5", "karta6", "karta7", "karta8"
-            };
-
-            // Zmienne do przechowywania załadowanych grafik
-            private BitmapImage obrazTylu;
-            private Dictionary<string, BitmapImage> obrazyPrzodow = new Dictionary<string, BitmapImage>();
-
-            public MainWindow()
-            {
-                InitializeComponent();
-                ZaladujObrazy(); // Najpierw ładujemy grafiki
-                StartNewGame();  // Potem startujemy grę
+                nazwyPlikow.Add($"karta{i}");
             }
 
-            // --- POPRAWIONA METODA ŁADOWANIA OBRAZÓW ---
-            private void ZaladujObrazy()
+            ZaladujObrazy();
+            StartNewGame();
+        }
+
+        private void ZaladujObrazy()
+        {
+            try
             {
-                try
+                var uriTyl = new Uri("zdjecia/tyl.png", UriKind.Relative);
+                obrazTylu = new BitmapImage();
+                obrazTylu.BeginInit();
+                obrazTylu.UriSource = uriTyl;
+                obrazTylu.CacheOption = BitmapCacheOption.OnLoad;
+                obrazTylu.EndInit();
+
+                foreach (string nazwa in nazwyPlikow)
                 {
-                    // 1. Ładujemy tył karty
-                    // UriKind.Relative oznacza, że szukamy w folderze obok pliku .exe
-                    var uriTyl = new Uri("zdjecia/tyl.png", UriKind.Relative);
-                    obrazTylu = new BitmapImage();
-                    obrazTylu.BeginInit();
-                    obrazTylu.UriSource = uriTyl;
-                    obrazTylu.CacheOption = BitmapCacheOption.OnLoad; // Wczytaj do pamięci od razu
-                    obrazTylu.EndInit();
+                    // UWAGA: Tutaj program oczekuje, że pliki fizycznie istnieją.
+                    // Jeśli nie masz 32 grafik, kod wyrzuci błąd w trybie 8x8.
+                    // Dla testów możesz zduplikować swoje 8 grafik zmieniając im nazwy.
+                    var uriPrzod = new Uri($"zdjecia/{nazwa}.png", UriKind.Relative);
 
-                    // 2. Ładujemy przody kart
-                    foreach (string nazwa in nazwyPlikow)
-                    {
-                        var uriPrzod = new Uri($"zdjecia/{nazwa}.png", UriKind.Relative);
+                    BitmapImage przod = new BitmapImage();
+                    przod.BeginInit();
+                    przod.UriSource = uriPrzod;
+                    przod.CacheOption = BitmapCacheOption.OnLoad;
+                    przod.EndInit();
 
-                        BitmapImage przod = new BitmapImage();
-                        przod.BeginInit();
-                        przod.UriSource = uriPrzod;
-                        przod.CacheOption = BitmapCacheOption.OnLoad;
-                        przod.EndInit();
-
-                        obrazyPrzodow.Add(nazwa, przod);
-                    }
-                }
-                catch (Exception e)
-                {
-                    MessageBox.Show($"Błąd wczytywania obrazków.\nUpewnij się, że folder 'zdjecia' jest w folderze gry, a pliki mają ustawione 'Copy to Output Directory'.\n\nSzczegóły: {e.Message}");
-                    Application.Current.Shutdown();
+                    obrazyPrzodow.Add(nazwa, przod);
                 }
             }
-
-            private void BtnRestart_Click(object sender, RoutedEventArgs e)
+            catch (Exception e)
             {
-                StartNewGame();
-            }
-
-            private void StartNewGame()
-            {
-                GameGrid.Children.Clear();
-                moves = 0;
-                UpdateMovesUI();
-                firstCard = null;
-                secondCard = null;
-                isChecking = false;
-
-                Random rnd = new Random();
-
-                // Tworzymy pary i tasujemy
-                var pary = nazwyPlikow.Concat(nazwyPlikow).ToList();
-                var potasowane = pary.OrderBy(x => rnd.Next()).ToList();
-
-                foreach (var nazwaPliku in potasowane)
-                {
-                    Button btn = new Button();
-                    btn.Style = (Style)FindResource("CardButtonStyle");
-
-                    // Tworzymy kontrolkę Image wewnątrz przycisku
-                    Image img = new Image();
-                    img.Source = obrazTylu; // Na początku widać tył
-                    img.Stretch = System.Windows.Media.Stretch.Uniform; // Skalowanie obrazka
-
-                    btn.Content = img;
-                    btn.Tag = nazwaPliku; // Zapamiętujemy co to za karta w Tagu
-                    btn.Click += Card_Click;
-
-                    GameGrid.Children.Add(btn);
-                }
-            }
-
-            private async void Card_Click(object sender, RoutedEventArgs e)
-            {
-                Button clickedBtn = sender as Button;
-
-                // Blokada: jeśli sprawdzamy, przycisk wyłączony lub to ta sama karta
-                if (isChecking || !clickedBtn.IsEnabled || clickedBtn == firstCard)
-                    return;
-
-                // Odkryj kartę (zmień źródło obrazka)
-                string nazwaKarty = (string)clickedBtn.Tag;
-                ((Image)clickedBtn.Content).Source = obrazyPrzodow[nazwaKarty];
-
-                if (firstCard == null)
-                {
-                    firstCard = clickedBtn;
-                    firstCard.IsEnabled = false; // Zablokuj pierwszą klikniętą
-                }
-                else
-                {
-                    secondCard = clickedBtn;
-                    secondCard.IsEnabled = false; // Zablokuj drugą klikniętą
-
-                    moves++;
-                    UpdateMovesUI();
-
-                    await CheckMatch();
-                }
-            }
-
-            private async Task CheckMatch()
-            {
-                isChecking = true;
-
-                string tag1 = firstCard.Tag.ToString();
-                string tag2 = secondCard.Tag.ToString();
-
-                if (tag1 == tag2)
-                {
-                    // PARY PASUJĄ
-                    // Karty zostają odkryte i zablokowane (IsEnabled = false ustawiliśmy wcześniej)
-                    CheckWinCondition();
-                }
-                else
-                {
-                    // NIE PASUJĄ
-                    await Task.Delay(1000); // Czekaj 1 sekundę
-
-                    // Zakryj karty z powrotem
-                    ((Image)firstCard.Content).Source = obrazTylu;
-                    ((Image)secondCard.Content).Source = obrazTylu;
-
-                    // Odblokuj przyciski
-                    firstCard.IsEnabled = true;
-                    secondCard.IsEnabled = true;
-                }
-
-                firstCard = null;
-                secondCard = null;
-                isChecking = false;
-            }
-
-            private void CheckWinCondition()
-            {
-
-                bool allDisabled = true;
-                foreach (Button btn in GameGrid.Children)
-                {
-                    if (btn.IsEnabled)
-                    {
-                        allDisabled = false;
-                        break;
-                    }
-                }
-
-                if (allDisabled)
-                {
-                    MessageBox.Show($"Gratulacje! Wygrałeś w {moves} ruchach.");
-                }
-            }
-
-            private void UpdateMovesUI()
-            {
-                txtMoves.Text = $"Ruchy: {moves}";
+                MessageBox.Show($"Błąd wczytywania obrazków.\nPotrzebujesz plików od karta1.png do karta32.png dla trybu 8x8!\n\nSzczegóły: {e.Message}");
+                Application.Current.Shutdown();
             }
         }
+
+        // --- NOWE: Obsługa zmiany poziomu trudności w ComboBox ---
+        private void DifficultyComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Zabezpieczenie przed uruchomieniem przy starcie okna (zanim wszystko się załaduje)
+            if (GameGrid == null) return;
+
+            ComboBox cmb = sender as ComboBox;
+            ComboBoxItem selectedItem = cmb.SelectedItem as ComboBoxItem;
+
+            if (selectedItem != null)
+            {
+                // Pobieramy rozmiar z Tagu (ustawionego w XAML: "4", "6", "8")
+                int size = int.Parse(selectedItem.Tag.ToString());
+                currentGridSize = size;
+                StartNewGame();
+            }
+        }
+
+        private void BtnRestart_Click(object sender, RoutedEventArgs e)
+        {
+            StartNewGame();
+        }
+
+        // --- ZMODYFIKOWANA METODA STARTU ---
+        private void StartNewGame()
+        {
+            if (GameGrid == null) return;
+
+            GameGrid.Children.Clear();
+            moves = 0;
+            UpdateMovesUI();
+            firstCard = null;
+            secondCard = null;
+            isChecking = false;
+
+            // 1. Ustawiamy siatkę (UniformGrid)
+            GameGrid.Rows = currentGridSize;
+            GameGrid.Columns = currentGridSize;
+
+            // 2. Obliczamy ile par potrzebujemy
+            int totalCells = currentGridSize * currentGridSize; // np. 4x4=16, 6x6=36, 8x8=64
+            int pairsNeeded = totalCells / 2;                   // np. 8, 18, 32
+
+            // 3. Wybieramy odpowiednią ilość obrazków z naszej dużej listy
+            // Take(pairsNeeded) bierze pierwsze X elementów z listy
+            var wybraneNazwy = nazwyPlikow.Take(pairsNeeded).ToList();
+
+            // 4. Sprawdzenie bezpieczeństwa (czy mamy dość grafik)
+            if (wybraneNazwy.Count < pairsNeeded)
+            {
+                MessageBox.Show($"Za mało grafik! Potrzeba {pairsNeeded} par, a załadowano {wybraneNazwy.Count}.");
+                return;
+            }
+
+            Random rnd = new Random();
+
+            // 5. Tworzymy pary i tasujemy
+            var pary = wybraneNazwy.Concat(wybraneNazwy).ToList();
+            var potasowane = pary.OrderBy(x => rnd.Next()).ToList();
+
+            foreach (var nazwaPliku in potasowane)
+            {
+                Button btn = new Button();
+
+                // Opcjonalnie: Zmniejsz marginesy dla dużych plansz, żeby się mieściło
+                btn.Margin = new Thickness(2);
+
+                // Styl przycisku (jeśli masz go w XAML, odkomentuj)
+                // btn.Style = (Style)FindResource("CardButtonStyle"); 
+
+                Image img = new Image();
+                img.Source = obrazTylu;
+                img.Stretch = System.Windows.Media.Stretch.Uniform;
+
+                btn.Content = img;
+                btn.Tag = nazwaPliku;
+                btn.Click += Card_Click;
+
+                GameGrid.Children.Add(btn);
+            }
+        }
+
+        private async void Card_Click(object sender, RoutedEventArgs e)
+        {
+            Button clickedBtn = sender as Button;
+
+            if (isChecking || !clickedBtn.IsEnabled || clickedBtn == firstCard)
+                return;
+
+            string nazwaKarty = (string)clickedBtn.Tag;
+            ((Image)clickedBtn.Content).Source = obrazyPrzodow[nazwaKarty];
+
+            if (firstCard == null)
+            {
+                firstCard = clickedBtn;
+                firstCard.IsEnabled = false;
+            }
+            else
+            {
+                secondCard = clickedBtn;
+                secondCard.IsEnabled = false;
+                moves++;
+                UpdateMovesUI();
+                await CheckMatch();
+            }
+        }
+
+        private async Task CheckMatch()
+        {
+            isChecking = true;
+            string tag1 = firstCard.Tag.ToString();
+            string tag2 = secondCard.Tag.ToString();
+
+            if (tag1 == tag2)
+            {
+                CheckWinCondition();
+            }
+            else
+            {
+                await Task.Delay(1000);
+                ((Image)firstCard.Content).Source = obrazTylu;
+                ((Image)secondCard.Content).Source = obrazTylu;
+                firstCard.IsEnabled = true;
+                secondCard.IsEnabled = true;
+            }
+
+            firstCard = null;
+            secondCard = null;
+            isChecking = false;
+        }
+
+        private void CheckWinCondition()
+        {
+            bool allDisabled = true;
+            foreach (Button btn in GameGrid.Children)
+            {
+                if (btn.IsEnabled)
+                {
+                    allDisabled = false;
+                    break;
+                }
+            }
+
+            if (allDisabled)
+            {
+                MessageBox.Show($"Gratulacje! Poziom {currentGridSize}x{currentGridSize} ukończony w {moves} ruchach.");
+            }
+        }
+
+        private void UpdateMovesUI()
+        {
+            txtMoves.Text = $"Ruchy: {moves}";
+        }
     }
+}
